@@ -365,7 +365,7 @@ const AccountsPage: React.FC = () => {
           key="mailbox"
           type="link"
           icon={<MailOutlined />}
-          href={`/mailbox?account=${encodeURIComponent(row.email)}`}
+          href={`/ops/mailbox?account=${encodeURIComponent(row.email)}`}
         >
           邮件
         </Button>,
@@ -1364,7 +1364,7 @@ const AccountsPage: React.FC = () => {
           <Button
             type="link"
             icon={<MailOutlined />}
-            href={`/mailbox?account=${encodeURIComponent(
+            href={`/ops/mailbox?account=${encodeURIComponent(
               extractResult?.email || '',
             )}`}
           >

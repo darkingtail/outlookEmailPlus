@@ -32,6 +32,7 @@ const commitHash =
  * @doc https://umijs.org/docs/api/config#publicpath
  */
 const PUBLIC_PATH: string = '/';
+const ADMIN_BASE_PATH: string = '/ops';
 
 export default defineConfig({
   alias: {
@@ -45,6 +46,7 @@ export default defineConfig({
   hash: true,
 
   publicPath: PUBLIC_PATH,
+  base: ADMIN_BASE_PATH,
 
   /**
    * @name 兼容性设置

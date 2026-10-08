@@ -4,6 +4,9 @@ import { outlookRequest } from './request';
 export type AccountItem = {
   id: number;
   email: string;
+  customer_secret?: string;
+  customer_secret_enabled?: boolean;
+  customer_secret_expires_at?: string | null;
   account_type?: string;
   provider?: string;
   client_id?: string;
@@ -103,6 +106,35 @@ export async function fetchAccount(accountId: number) {
     error?: any;
   }>(`/api/accounts/${accountId}`, {
     method: 'GET',
+    skipErrorHandler: true,
+  });
+}
+
+export async function resetCustomerSecret(accountId: number) {
+  return outlookRequest<{
+    success: boolean;
+    customer_secret?: string;
+    error?: any;
+  }>(`/api/accounts/${accountId}/customer-secret/reset`, {
+    method: 'POST',
+    skipErrorHandler: true,
+  });
+}
+
+export async function updateCustomerSecretAccess(
+  accountId: number,
+  enabled: boolean,
+  expiresAt?: string | null,
+) {
+  return outlookRequest<{
+    success: boolean;
+    error?: any;
+  }>(`/api/accounts/${accountId}/customer-secret`, {
+    method: 'PATCH',
+    data: {
+      enabled,
+      expires_at: expiresAt || null,
+    },
     skipErrorHandler: true,
   });
 }

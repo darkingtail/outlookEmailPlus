@@ -193,9 +193,22 @@ def favicon() -> Any:
     return image_asset("ico.png")
 
 
-@login_required
 def index() -> Any:
-    """主页"""
+    """客户邮箱查询页。"""
+    return render_template("customer_mail.html")
+
+
+def removed_mailbox_compat() -> Any:
+    """顶层旧客户入口已移除，避免被 SPA 回退误当成有效页面。"""
+    abort(404)
+
+
+def admin_index() -> Any:
+    """管理员 SPA 入口。
+
+    页面外壳允许匿名加载，以便前端显示登录页；管理员数据接口仍由
+    后端登录鉴权保护。
+    """
     if spa_support.spa_enabled():
         return spa_support.send_spa_index()
     return render_template("index.html")

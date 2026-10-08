@@ -48,6 +48,8 @@ describe('getSafeRedirectUrl', () => {
           path !== '*',
       );
 
-    expect(configuredPaths).toEqual(AUTHENTICATED_ROUTE_PATHS);
+    expect(configuredPaths.map((path) => `/ops${path}`)).toEqual(
+      AUTHENTICATED_ROUTE_PATHS,
+    );
   });
 });

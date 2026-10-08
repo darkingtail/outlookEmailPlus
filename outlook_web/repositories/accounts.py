@@ -4,6 +4,7 @@ import sqlite3
 from typing import Any, Dict, List, Optional, Tuple
 
 from outlook_web.db import get_db
+from outlook_web.repositories import customer_credentials
 from outlook_web.security.crypto import decrypt_data, encrypt_data
 
 COMPACT_SUMMARY_FIELDS = (
@@ -85,10 +86,12 @@ def _hydrate_accounts(rows: List[sqlite3.Row], db: sqlite3.Connection) -> List[D
         account_ids = []
 
     tags_by_account = _load_tags_by_account_ids(db, account_ids)
+    credentials = customer_credentials.by_account_ids(db, account_ids)
     accounts: List[Dict[str, Any]] = []
 
     for row in rows:
         account = dict(row)
+        customer_credentials.attach(account, credentials.get(account["id"]))
         _decrypt_account_field(account, "password")
         _decrypt_account_field(account, "refresh_token")
         _decrypt_account_field(account, "imap_password")
@@ -256,6 +259,9 @@ def get_account_by_email(email_addr: str) -> Optional[Dict]:
     if not row:
         return None
     account = dict(row)
+    customer_credentials.attach(
+        account, customer_credentials.by_account_ids(db, [account["id"]]).get(account["id"])
+    )
     _decrypt_account_field(account, "password")
     _decrypt_account_field(account, "refresh_token")
     _decrypt_account_field(account, "imap_password")
@@ -278,6 +284,9 @@ def get_account_by_id(account_id: int) -> Optional[Dict]:
     if not row:
         return None
     account = dict(row)
+    customer_credentials.attach(
+        account, customer_credentials.by_account_ids(db, [account["id"]]).get(account["id"])
+    )
     _decrypt_account_field(account, "password")
     _decrypt_account_field(account, "refresh_token")
     _decrypt_account_field(account, "imap_password")
@@ -400,6 +409,7 @@ def add_account(
 ) -> bool:
     """添加邮箱账号（支持外部事务批量导入）"""
     db = db or get_db()
+    savepoint_started = False
     try:
         account_type = (account_type or "outlook").strip().lower()
         provider = (provider or ("outlook" if account_type != "imap" else "custom")).strip().lower()
@@ -421,8 +431,11 @@ def add_account(
         encrypted_imap_password = encrypt_data(imap_password) if imap_password else imap_password
         initial_pool_status = "available" if add_to_pool else None
         email_domain = _normalize_account_email_domain(email_addr)
-
-        db.execute(
+        if not commit and not db.in_transaction:
+            db.execute("BEGIN")
+        db.execute("SAVEPOINT customer_account_insert")
+        savepoint_started = True
+        cursor = db.execute(
             """
             INSERT INTO accounts (
                 email, password, client_id, refresh_token,
@@ -447,13 +460,56 @@ def add_account(
                 email_domain,
             ),
         )
+        customer_credentials.create_for_account(db, cursor.lastrowid)
+        db.execute("RELEASE SAVEPOINT customer_account_insert")
+        savepoint_started = False
         if commit:
             db.commit()
         return True
     except sqlite3.IntegrityError:
+        if savepoint_started:
+            db.execute("ROLLBACK TO SAVEPOINT customer_account_insert")
+            db.execute("RELEASE SAVEPOINT customer_account_insert")
         return False
     except Exception:
+        if savepoint_started:
+            db.execute("ROLLBACK TO SAVEPOINT customer_account_insert")
+            db.execute("RELEASE SAVEPOINT customer_account_insert")
         return False
+
+
+def reset_customer_secret(account_id: int) -> Optional[str]:
+    """为账号生成新客户密钥；旧密钥立即失效。"""
+    return customer_credentials.reset(account_id)
+
+
+def update_customer_secret_access(
+    account_id: int, *, enabled: bool, expires_at: Optional[str]
+) -> bool:
+    return customer_credentials.update_access(account_id, enabled=enabled, expires_at=expires_at)
+
+
+def get_customer_account(email_addr: str) -> Optional[Dict[str, Any]]:
+    db = get_db()
+    row = db.execute(
+        "SELECT * FROM accounts WHERE email = ?",
+        (email_addr.strip(),),
+    ).fetchone()
+    if not row:
+        matches = db.execute(
+            "SELECT * FROM accounts WHERE LOWER(email) = LOWER(?) LIMIT 2",
+            (email_addr.strip(),),
+        ).fetchall()
+        row = matches[0] if len(matches) == 1 else None
+    if not row:
+        return None
+    account = dict(row)
+    customer_credentials.attach(
+        account, customer_credentials.by_account_ids(db, [account["id"]]).get(account["id"])
+    )
+    _decrypt_account_field(account, "refresh_token")
+    _decrypt_account_field(account, "imap_password")
+    return account
 
 
 def update_account(

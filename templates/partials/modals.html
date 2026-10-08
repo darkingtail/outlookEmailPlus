@@ -220,6 +220,24 @@
                         <option value="inactive">停用</option>
                     </select>
                 </div>
+                <div class="form-group">
+                    <label class="form-label" for="editCustomerSecret">客户查询密钥</label>
+                    <input class="form-input" id="editCustomerSecret" type="text" readonly autocomplete="off">
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+                        <button class="btn btn-sm btn-secondary" type="button" onclick="copyCustomerSecret()">复制密钥</button>
+                        <button class="btn btn-sm btn-secondary" type="button" onclick="resetCustomerSecret()">重置密钥</button>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="editCustomerSecretEnabled">客户查询权限</label>
+                    <select class="form-select" id="editCustomerSecretEnabled">
+                        <option value="true">启用</option>
+                        <option value="false">禁用</option>
+                    </select>
+                    <label class="form-label" for="editCustomerSecretExpiresAt" style="margin-top:8px;">过期时间（可选）</label>
+                    <input class="form-input" id="editCustomerSecretExpiresAt" type="datetime-local">
+                    <button class="btn btn-sm btn-secondary" type="button" onclick="saveCustomerSecretAccess()" style="margin-top:8px;">保存查询权限</button>
+                </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-danger" onclick="deleteCurrentAccount()" style="margin-right: auto;">删除</button>

@@ -41,6 +41,7 @@ from outlook_web.security.crypto import (
 # v25：ZER-537 — external_api_keys 新增 expires_at，支持 API Key 生命周期管理
 DB_SCHEMA_VERSION = 25
 DB_SCHEMA_VERSION_KEY = "db_schema_version"
+CUSTOMER_MAIL_SCHEMA_VERSION_KEY = "customer_mail_schema_version"
 DB_SCHEMA_LAST_UPGRADE_TRACE_ID_KEY = "db_schema_last_upgrade_trace_id"
 DB_SCHEMA_LAST_UPGRADE_ERROR_KEY = "db_schema_last_upgrade_error"
 
@@ -141,6 +142,18 @@ def init_db(database_path: Optional[str] = None):
         # 在锁内读取当前 schema 版本（保证一致性）
         row = cursor.execute("SELECT value FROM settings WHERE key = ?", (DB_SCHEMA_VERSION_KEY,)).fetchone()
         current_version = int(row["value"]) if row and row["value"] is not None else 0
+        customer_version_row = cursor.execute(
+            "SELECT value FROM settings WHERE key = ?", (CUSTOMER_MAIL_SCHEMA_VERSION_KEY,)
+        ).fetchone()
+        customer_version = str(customer_version_row["value"]) if customer_version_row else ""
+        legacy_customer_columns = {
+            column["name"] for column in cursor.execute("PRAGMA table_info(accounts)").fetchall()
+        } if current_version == 26 else set()
+        provisional_v26 = (
+            current_version == 26
+            and "customer_secret" in legacy_customer_columns
+            and customer_version != "2"
+        )
 
         upgrading = current_version < DB_SCHEMA_VERSION
         if upgrading:
@@ -207,6 +220,36 @@ def init_db(database_path: Optional[str] = None):
                 FOREIGN KEY (group_id) REFERENCES groups (id)
             )
         """)
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS customer_mail_credentials (
+                account_id INTEGER PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+                secret TEXT NOT NULL UNIQUE,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                expires_at TIMESTAMP
+            )
+            """
+        )
+        from outlook_web.repositories.customer_credentials import backfill_credentials
+
+        backfill_credentials(conn, migrate_legacy=customer_version != "2")
+        cursor.execute(
+            """
+            INSERT OR REPLACE INTO settings (key, value, updated_at)
+            VALUES (?, '2', CURRENT_TIMESTAMP)
+            """,
+            (CUSTOMER_MAIL_SCHEMA_VERSION_KEY,),
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS customer_mail_rate_limits (
+                ip_address TEXT NOT NULL,
+                minute_bucket INTEGER NOT NULL,
+                request_count INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (ip_address, minute_bucket)
+            )
+            """
+        )
 
         # 临时邮箱表
         cursor.execute("""
@@ -1310,7 +1353,7 @@ def init_db(database_path: Optional[str] = None):
             INSERT OR REPLACE INTO settings (key, value, updated_at)
             VALUES (?, ?, CURRENT_TIMESTAMP)
             """,
-            (DB_SCHEMA_VERSION_KEY, str(DB_SCHEMA_VERSION)),
+            (DB_SCHEMA_VERSION_KEY, str(DB_SCHEMA_VERSION if provisional_v26 else max(current_version, DB_SCHEMA_VERSION))),
         )
 
         if upgrading and migration_id is not None:

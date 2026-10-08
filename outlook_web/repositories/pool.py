@@ -115,6 +115,8 @@ def insert_claimed_account(
     try:
         conn.execute("BEGIN IMMEDIATE")
 
+        from outlook_web.repositories.customer_credentials import create_for_account
+
         cursor = conn.execute(
             """
             INSERT INTO accounts (
@@ -146,6 +148,7 @@ def insert_claimed_account(
             ),
         )
         account_id = cursor.lastrowid
+        create_for_account(conn, account_id)
 
         conn.execute(
             """

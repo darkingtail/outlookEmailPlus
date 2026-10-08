@@ -36,6 +36,7 @@ def create_app(*, autostart_scheduler: Optional[bool] = None):
         from outlook_web.routes import (
             accounts,
             audit,
+            customer_mail,
             emails,
             external_pool,
             external_temp_emails,
@@ -176,6 +177,7 @@ def create_app(*, autostart_scheduler: Optional[bool] = None):
 
         # Blueprint 路由注册（URL 不变）
         app.register_blueprint(pages.create_blueprint(csrf_exempt=csrf_exempt))
+        app.register_blueprint(customer_mail.create_blueprint(csrf_exempt=csrf_exempt))
         app.register_blueprint(groups.create_blueprint())
         app.register_blueprint(tags.create_blueprint())
         app.register_blueprint(accounts.create_blueprint())
@@ -198,6 +200,10 @@ def create_app(*, autostart_scheduler: Optional[bool] = None):
         from outlook_web import spa as spa_support
 
         if spa_support.spa_enabled():
+
+            @app.route("/ops/<path:spa_path>", methods=["GET"])
+            def ops_spa_catchall(spa_path: str):
+                return spa_support.send_spa_asset(spa_path)
 
             @app.route("/<path:spa_path>", methods=["GET"])
             def spa_catchall(spa_path: str):

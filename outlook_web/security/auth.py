@@ -287,17 +287,24 @@ def get_client_ip() -> str:
 
         # 检查直接连接方是否为受信任代理
         remote_addr = request.remote_addr or ""
-        is_trusted_proxy = _ip_in_trusted_proxies(remote_addr, trusted_proxies)
+        original = request.environ.get("werkzeug.proxy_fix.orig") or {}
+        transport_addr = original.get("REMOTE_ADDR") or remote_addr
+        is_trusted_proxy = _ip_in_trusted_proxies(transport_addr, trusted_proxies)
 
         if is_trusted_proxy and trusted_proxies:
-            # 请求来自受信任代理，可以信任 X-Forwarded-For
-            client_ip = request.headers.get("X-Forwarded-For") or remote_addr
+            # 单层代理取最右侧地址，客户端预置的左侧地址不能影响限流。
+            forwarded = request.headers.get("X-Forwarded-For") or ""
+            client_ip = forwarded.split(",")[-1].strip() if forwarded else ""
             if client_ip:
-                client_ip = client_ip.split(",")[0].strip()
-            return client_ip or "unknown"
+                import ipaddress
+
+                try:
+                    return str(ipaddress.ip_address(client_ip))
+                except ValueError:
+                    pass
+            return transport_addr
         else:
-            # 请求不��来自受信任代理，使用 remote_addr 防止伪造
-            return remote_addr or "unknown"
+            return transport_addr or "unknown"
     except Exception:
         return "unknown"
 

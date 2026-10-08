@@ -103,7 +103,7 @@ def get_email_body(msg) -> str:
     return html_text or plain_text
 
 
-def get_email_body_and_type(msg) -> tuple:
+def get_email_body_and_type(msg, *, prefer_html: bool = False) -> tuple:
     """提取邮件正文和类型（用于需要区分 HTML/Text 的场景）
 
     返回 (body, body_type) 元组：
@@ -150,6 +150,8 @@ def get_email_body_and_type(msg) -> tuple:
         except Exception:
             plain_text = str(msg.get_payload())
 
+    if prefer_html and html_text.strip():
+        return html_text, "html"
     # 如果 text/plain 太短（<20字符），回退到 text/html
     if len(plain_text.strip()) >= 20:
         return plain_text, "text"
@@ -673,6 +675,8 @@ def get_email_detail_imap_with_server(
     message_id: str,
     folder: str = "inbox",
     server: str = IMAP_SERVER_NEW,
+    *,
+    prefer_html: bool = False,
 ) -> Optional[Dict]:
     """使用 IMAP 获取邮件详情（支持指定服务器）。"""
     access_token = get_access_token_imap(client_id, refresh_token)
@@ -732,8 +736,8 @@ def get_email_detail_imap_with_server(
         except Exception:
             raw_text = ""
 
-        body, body_type = get_email_body_and_type(msg)
-        return {
+        body, body_type = get_email_body_and_type(msg, prefer_html=prefer_html)
+        detail = {
             "id": message_id,
             "subject": decode_header_value(msg.get("Subject", "无主题")),
             "from": decode_header_value(msg.get("From", "未知发件人")),
@@ -744,6 +748,12 @@ def get_email_detail_imap_with_server(
             "body_type": body_type,
             "raw_content": raw_text,
         }
+        if prefer_html and body_type == "html":
+            detail["body_html"] = body
+            fallback, fallback_type = get_email_body_and_type(msg)
+            if fallback_type == "text":
+                detail["body_text"] = fallback
+        return detail
     except Exception:
         return None
     finally:

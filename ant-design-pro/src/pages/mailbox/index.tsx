@@ -3,6 +3,7 @@ import {
   ColumnWidthOutlined,
   CopyOutlined,
   DeleteOutlined,
+  EyeOutlined,
   KeyOutlined,
   MailOutlined,
   ReloadOutlined,
@@ -23,6 +24,7 @@ import {
   Input,
   List,
   Menu,
+  Modal,
   Popconfirm,
   Segmented,
   Select,
@@ -42,7 +44,11 @@ import MailboxFolderSwitch, {
 } from '@/components/MailboxFolderSwitch';
 import { usePollingSettingsDraft } from '@/hooks/usePollingSettingsDraft';
 import { summarizeDualFolderPull } from '@/utils/mailboxPull';
-import { type AccountItem, fetchAccounts } from '@/services/outlook/accounts';
+import {
+  type AccountItem,
+  fetchAccounts,
+  resetCustomerSecret as resetMailboxCustomerSecret,
+} from '@/services/outlook/accounts';
 import {
   deleteEmails,
   type EmailDetail,
@@ -187,6 +193,10 @@ const MailboxPage: React.FC = () => {
   const [pullingEmails, setPullingEmails] = useState<Record<string, boolean>>(
     {},
   );
+  const [customerSecretAccount, setCustomerSecretAccount] =
+    useState<AccountItem | null>(null);
+  const [customerSecretResetting, setCustomerSecretResetting] =
+    useState(false);
   const listRequestIdRef = useRef(0);
   const detailRequestIdRef = useRef(0);
 
@@ -223,6 +233,46 @@ const MailboxPage: React.FC = () => {
     () => accountsQuery.data?.accounts || [],
     [accountsQuery.data],
   );
+
+  const openCustomerSecret = useCallback((account: AccountItem) => {
+    setCustomerSecretAccount(account);
+  }, []);
+
+  const copyCustomerSecret = useCallback(
+    async (secret?: string) => {
+      if (!secret) {
+        message.warning('该邮箱尚未生成客户密钥');
+        return;
+      }
+      const ok = await copyText(secret);
+      if (ok) message.success('客户密钥已复制');
+      else message.error('复制失败，请手动复制');
+    },
+    [message],
+  );
+
+  const resetCustomerSecret = useCallback(async () => {
+    if (!customerSecretAccount) return;
+    setCustomerSecretResetting(true);
+    try {
+      const res = await resetMailboxCustomerSecret(customerSecretAccount.id);
+      if (!res?.success || !res.customer_secret) {
+        throw new Error('客户密钥重置失败');
+      }
+      const nextAccount = {
+        ...customerSecretAccount,
+        customer_secret: res.customer_secret,
+        customer_secret_enabled: true,
+      };
+      setCustomerSecretAccount(nextAccount);
+      await accountsQuery.refetch();
+      message.success('客户密钥已重置，旧密钥已立即失效');
+    } catch (error: any) {
+      message.error(error?.message || '客户密钥重置失败');
+    } finally {
+      setCustomerSecretResetting(false);
+    }
+  }, [accountsQuery, customerSecretAccount, message]);
 
   const filteredCompactAccounts = useMemo(() => {
     const q = compactSearch.trim().toLowerCase();
@@ -945,6 +995,13 @@ const MailboxPage: React.FC = () => {
                       </Button>
                       <Button
                         size="small"
+                        icon={<EyeOutlined />}
+                        onClick={() => openCustomerSecret(account)}
+                      >
+                        客户密钥
+                      </Button>
+                      <Button
+                        size="small"
                         type={poll ? 'primary' : 'default'}
                         danger={poll}
                         onClick={() => void onTogglePoll(account.email)}
@@ -1407,6 +1464,14 @@ const MailboxPage: React.FC = () => {
             >
               打开
             </Button>
+            <Button
+              size="small"
+              type="link"
+              icon={<EyeOutlined />}
+              onClick={() => openCustomerSecret(account)}
+            >
+              客户密钥
+            </Button>
           </Space>
         );
       },
@@ -1672,6 +1737,89 @@ const MailboxPage: React.FC = () => {
           emails={emailWorkbench}
         />
       )}
+      <Modal
+        title="邮箱客户密钥"
+        open={!!customerSecretAccount}
+        onCancel={() => {
+          if (!customerSecretResetting) setCustomerSecretAccount(null);
+        }}
+        footer={null}
+        destroyOnHidden
+      >
+        {customerSecretAccount ? (
+          <Space direction="vertical" size={16} style={{ width: '100%' }}>
+            <div>
+              <Typography.Text type="secondary">绑定邮箱</Typography.Text>
+              <Typography.Text
+                strong
+                copyable
+                style={{ display: 'block', wordBreak: 'break-all' }}
+              >
+                {customerSecretAccount.email}
+              </Typography.Text>
+            </div>
+            <div>
+              <Typography.Text type="secondary">客户密钥</Typography.Text>
+              <Input
+                value={customerSecretAccount.customer_secret || ''}
+                readOnly
+                placeholder="尚未生成客户密钥"
+                addonAfter={
+                  <Button
+                    type="link"
+                    size="small"
+                    disabled={!customerSecretAccount.customer_secret}
+                    onClick={() =>
+                      void copyCustomerSecret(
+                        customerSecretAccount.customer_secret,
+                      )
+                    }
+                  >
+                    复制
+                  </Button>
+                }
+              />
+            </div>
+            <Space wrap>
+              <Tag
+                color={
+                  customerSecretAccount.customer_secret_enabled
+                    ? 'success'
+                    : 'default'
+                }
+              >
+                {customerSecretAccount.customer_secret_enabled
+                  ? '已启用'
+                  : '已禁用'}
+              </Tag>
+              <Typography.Text type="secondary">
+                过期时间：
+                {customerSecretAccount.customer_secret_expires_at
+                  ? formatDate(customerSecretAccount.customer_secret_expires_at)
+                  : '不设置'}
+              </Typography.Text>
+            </Space>
+            <Typography.Text type="secondary">
+              客户查询时需要同时提供邮箱地址和这把密钥。
+            </Typography.Text>
+            <Popconfirm
+              title="确定重置客户密钥吗？"
+              description="旧密钥会立即失效，重置后需要把新密钥重新发给客户。"
+              okText="确认重置"
+              cancelText="取消"
+              onConfirm={() => void resetCustomerSecret()}
+            >
+              <Button
+                danger
+                icon={<ReloadOutlined />}
+                loading={customerSecretResetting}
+              >
+                重置客户密钥
+              </Button>
+            </Popconfirm>
+          </Space>
+        ) : null}
+      </Modal>
     </PageContainer>
   );
 };

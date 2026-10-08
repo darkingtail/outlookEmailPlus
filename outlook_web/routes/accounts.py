@@ -8,6 +8,11 @@ from outlook_web.controllers import accounts as accounts_controller
 def create_blueprint() -> Blueprint:
     bp = Blueprint("accounts", __name__)
 
+    @bp.after_request
+    def private_account_responses(response):
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
     # 基础 CRUD（已迁移到 controllers）
     bp.add_url_rule("/api/accounts", view_func=accounts_controller.api_get_accounts, methods=["GET"])
     bp.add_url_rule("/api/accounts", view_func=accounts_controller.api_add_account, methods=["POST"])
@@ -20,6 +25,16 @@ def create_blueprint() -> Blueprint:
         "/api/accounts/<int:account_id>",
         view_func=accounts_controller.api_get_account,
         methods=["GET"],
+    )
+    bp.add_url_rule(
+        "/api/accounts/<int:account_id>/customer-secret/reset",
+        view_func=accounts_controller.api_reset_customer_secret,
+        methods=["POST"],
+    )
+    bp.add_url_rule(
+        "/api/accounts/<int:account_id>/customer-secret",
+        view_func=accounts_controller.api_update_customer_secret_access,
+        methods=["PATCH"],
     )
     bp.add_url_rule(
         "/api/accounts/<int:account_id>",

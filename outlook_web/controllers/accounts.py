@@ -214,6 +214,9 @@ def api_get_accounts() -> Any:
             {
                 "id": acc["id"],
                 "email": acc["email"],
+                "customer_secret": acc.get("customer_secret") or "",
+                "customer_secret_enabled": bool(acc.get("customer_secret_enabled")),
+                "customer_secret_expires_at": acc.get("customer_secret_expires_at"),
                 "account_type": acc.get("account_type") or "outlook",
                 "provider": acc.get("provider") or "outlook",
                 "client_id": (acc["client_id"][:8] + "..." if len(acc["client_id"]) > 8 else acc["client_id"]),
@@ -271,6 +274,9 @@ def api_get_account(account_id: int) -> Any:
             "account": {
                 "id": account["id"],
                 "email": account["email"],
+                "customer_secret": account.get("customer_secret") or "",
+                "customer_secret_enabled": bool(account.get("customer_secret_enabled")),
+                "customer_secret_expires_at": account.get("customer_secret_expires_at"),
                 # 敏感字段默认不回显（避免泄露）；如需查看请走"导出+二次验证"
                 "password": "",
                 "client_id": account["client_id"],
@@ -297,6 +303,38 @@ def api_get_account(account_id: int) -> Any:
             },
         }
     )
+
+
+@login_required
+def api_reset_customer_secret(account_id: int) -> Any:
+    secret = accounts_repo.reset_customer_secret(account_id)
+    if secret is None:
+        return build_error_response("ACCOUNT_NOT_FOUND", "账号不存在", status=404)
+    log_audit("reset_customer_secret", "account", str(account_id))
+    response = jsonify({"success": True, "customer_secret": secret})
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@login_required
+def api_update_customer_secret_access(account_id: int) -> Any:
+    data = request.get_json(silent=True) or {}
+    if not isinstance(data.get("enabled"), bool):
+        return build_error_response("INVALID_PARAM", "enabled 必须是布尔值", status=400)
+    expires_at = data.get("expires_at")
+    if expires_at is not None and not isinstance(expires_at, str):
+        return build_error_response("INVALID_PARAM", "过期时间格式无效", status=400)
+    if expires_at:
+        try:
+            datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+        except ValueError:
+            return build_error_response("INVALID_PARAM", "过期时间格式无效", status=400)
+    if not accounts_repo.update_customer_secret_access(
+        account_id, enabled=data["enabled"], expires_at=expires_at or None
+    ):
+        return build_error_response("ACCOUNT_NOT_FOUND", "账号不存在", status=404)
+    log_audit("update_customer_secret_access", "account", str(account_id))
+    return jsonify({"success": True})
 
 
 @login_required

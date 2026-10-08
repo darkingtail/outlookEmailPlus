@@ -84,13 +84,13 @@ export const errorConfig: RequestConfig = {
         data?.need_login ||
         (typeof data?.error === 'object' && data.error?.code === 'AUTH_REQUIRED')
       ) {
-        if (window.location.pathname !== '/user/login') {
+        if (window.location.pathname !== '/ops/user/login') {
           const redirect = encodeURIComponent(
             window.location.pathname +
               window.location.search +
               window.location.hash,
           );
-          window.location.href = `/user/login?redirect=${redirect}`;
+          window.location.href = `/ops/user/login?redirect=${redirect}`;
         }
         return;
       }
@@ -115,7 +115,7 @@ export const errorConfig: RequestConfig = {
               });
               break;
             case ErrorShowType.REDIRECT:
-              window.location.href = '/user/login';
+              window.location.href = '/ops/user/login';
               break;
             default:
               message.error(errorMessage);

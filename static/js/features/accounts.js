@@ -405,6 +405,14 @@
                     document.getElementById('editGroupSelect').value = acc.group_id || 1;
                     document.getElementById('editRemark').value = acc.remark || '';
                     document.getElementById('editStatus').value = acc.status || 'active';
+                    document.getElementById('editCustomerSecret').value = acc.customer_secret || '';
+                    document.getElementById('editCustomerSecretEnabled').value = String(!!acc.customer_secret_enabled);
+                    document.getElementById('editCustomerSecretExpiresAt').value =
+                        acc.customer_secret_expires_at
+                            ? new Date(acc.customer_secret_expires_at.replace(' ', 'T') +
+                                (/[Zz]|[+-]\d\d:\d\d$/.test(acc.customer_secret_expires_at) ? '' : 'Z'))
+                                .toLocaleString('sv-SE').replace(' ', 'T').slice(0, 16)
+                            : '';
 
                     // IMAP 账号：隐藏 Client ID / Refresh Token，调整密码标签
                     const clientIdGroup = document.getElementById('editClientIdGroup');
@@ -429,6 +437,51 @@
                 }
             } catch (error) {
                 showToast(translateAppTextLocal('加载账号信息失败'), 'error');
+            }
+        }
+
+        async function copyCustomerSecret() {
+            const value = document.getElementById('editCustomerSecret').value;
+            if (!value) return;
+            try {
+                await navigator.clipboard.writeText(value);
+                showToast('密钥已复制', 'success');
+            } catch (_) {
+                showToast('复制失败', 'error');
+            }
+        }
+
+        async function resetCustomerSecret() {
+            if (!confirm('重置后旧密钥立即失效，确定继续？')) return;
+            const accountId = document.getElementById('editAccountId').value;
+            try {
+                const response = await fetch(`/api/accounts/${accountId}/customer-secret/reset`, { method: 'POST' });
+                const result = await response.json();
+                if (!response.ok || !result.success) throw new Error('重置失败');
+                document.getElementById('editCustomerSecret').value = result.customer_secret;
+                showToast('密钥已重置，原查询权限与过期时间不变', 'success');
+            } catch (_) {
+                showToast('重置密钥失败', 'error');
+            }
+        }
+
+        async function saveCustomerSecretAccess() {
+            const accountId = document.getElementById('editAccountId').value;
+            const expiresAt = document.getElementById('editCustomerSecretExpiresAt').value;
+            try {
+                const response = await fetch(`/api/accounts/${accountId}/customer-secret`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        enabled: document.getElementById('editCustomerSecretEnabled').value === 'true',
+                        expires_at: expiresAt ? new Date(expiresAt).toISOString() : null,
+                    }),
+                });
+                const result = await response.json();
+                if (!response.ok || !result.success) throw new Error('保存失败');
+                showToast('查询权限已保存', 'success');
+            } catch (_) {
+                showToast('保存查询权限失败', 'error');
             }
         }
 

@@ -1,17 +1,17 @@
-export const DEFAULT_AUTHENTICATED_REDIRECT = '/overview';
+export const DEFAULT_AUTHENTICATED_REDIRECT = '/ops/overview';
 
 export const AUTHENTICATED_ROUTE_PATHS = [
-  '/overview',
-  '/mailbox',
-  '/accounts',
-  '/groups',
-  '/temp-emails',
-  '/pool-admin',
-  '/plugins',
-  '/refresh-log',
-  '/settings',
-  '/audit',
-  '/token-tool',
+  '/ops/overview',
+  '/ops/mailbox',
+  '/ops/accounts',
+  '/ops/groups',
+  '/ops/temp-emails',
+  '/ops/pool-admin',
+  '/ops/plugins',
+  '/ops/refresh-log',
+  '/ops/settings',
+  '/ops/audit',
+  '/ops/token-tool',
 ] as const;
 
 const AUTHENTICATED_ROUTE_PATH_SET = new Set<string>(

@@ -583,6 +583,74 @@ def list_messages_for_external(
     )
 
 
+def list_messages_for_customer(
+    *,
+    account: Dict[str, Any],
+    folder: str = "inbox",
+    skip: int = 0,
+    top: int = 20,
+) -> Tuple[List[Dict[str, Any]], str]:
+    """按已校验的账号读取邮件，不依赖现有 External API consumer 上下文。"""
+    email_addr = str(account.get("email") or "").strip()
+    if not email_addr:
+        raise InvalidParamError("邮箱地址无效")
+    if not _account_can_read(account):
+        raise AccountAccessForbiddenError("当前账号不可读取")
+
+    folder = (folder or "inbox").strip().lower() or "inbox"
+    skip = max(0, int(skip or 0))
+    top = max(1, min(int(top or 20), 50))
+    account_type = (account.get("account_type") or "outlook").strip().lower()
+
+    if account_type == "imap":
+        result = get_emails_imap_generic(
+            email_addr=email_addr,
+            imap_password=account.get("imap_password", "") or "",
+            imap_host=account.get("imap_host", "") or "",
+            imap_port=account.get("imap_port", 993) or 993,
+            folder=folder,
+            provider=account.get("provider", "_default") or "_default",
+            skip=skip,
+            top=top,
+        )
+        if not result.get("success"):
+            raise UpstreamReadFailedError("IMAP 读取失败", data=result.get("error"))
+        method = str(result.get("method") or "IMAP (Generic)")
+        return [_build_message_summary(email_addr, item, method=method) for item in (result.get("emails") or [])], method
+
+    proxy_url = _get_proxy_url(account)
+    graph_result = graph_service.get_emails_graph(
+        account.get("client_id") or "",
+        account.get("refresh_token") or "",
+        folder=folder,
+        skip=skip,
+        top=top,
+        proxy_url=proxy_url,
+    )
+    if graph_result.get("success"):
+        method = "Graph API"
+        new_rt = graph_result.get("new_refresh_token")
+        if new_rt:
+            accounts_repo.update_refresh_token_if_changed(int(account["id"]), str(new_rt))
+        return [_build_message_summary(email_addr, item, method=method) for item in (graph_result.get("emails") or [])], method
+
+    errors = {"graph": graph_result.get("error")}
+    for server, label in ((IMAP_SERVER_NEW, "IMAP (New)"), (IMAP_SERVER_OLD, "IMAP (Old)")):
+        result = imap_service.get_emails_imap_with_server(
+            email_addr,
+            account.get("client_id") or "",
+            account.get("refresh_token") or "",
+            folder,
+            skip,
+            top,
+            server,
+        )
+        if result.get("success"):
+            return [_build_message_summary(email_addr, item, method=label) for item in (result.get("emails") or [])], label
+        errors[server] = result.get("error")
+    raise UpstreamReadFailedError("Graph/IMAP 均读取失败", data=errors)
+
+
 def filter_messages(  # noqa: C901
     emails: List[Dict[str, Any]],
     *,
